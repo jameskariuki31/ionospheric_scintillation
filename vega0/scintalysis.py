@@ -348,7 +348,8 @@ def scalevstime_plots(night1_obsids, night2_obsids, source, plotname, night1_mdn
         #ax3.yaxis.tick_left()
         
         fig.text(0.5, 0.12, 'Date, time on October 2013', ha='center')
-        fig.autofmt_xdate()                                                                                                                                                      
+        fig.autofmt_xdate()
+        fig.savefig('v4_%s'%(plotname))                                                                                                                                                     
         plt.show()
 
 
