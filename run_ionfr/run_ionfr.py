@@ -16,7 +16,7 @@ to_zone = tz.gettz('Australia/Perth')
 
 def get_ionex(date):
     '''
-    Get the name of the required ionex file derived from the dat e of the observation
+    Get the name of the required ionex file derived from the date of the observation
     Download it from CODE website
     Uncompress it
     '''
@@ -34,16 +34,22 @@ def get_ionex(date):
     ionex = 'CODG'+str(dayofyear)+'0.'+str(list(str(year))[2])+''+str(list(str(year))[3])+'I'
     print ('file needed:', ionex)
 
-    url = 'http://ftp.aiub.unibe.ch/CODE/' + str(year)
-    urllib.request.urlretrieve('%s/%s.Z'%(url,ionex), '%s.Z'%(ionex))
-    print('file downloaded')
+    path = os.path.abspath('')
+    found = os.listdir(path)
+    if ionex not in found:
+        url = 'http://ftp.aiub.unibe.ch/CODE/' + str(year)
+        urllib.request.urlretrieve('%s/%s.Z'%(url,ionex), '%s.Z'%(ionex))
+        print('file downloaded')
 
-    os.system('uncompress %s.Z'%(ionex))
+        os.system('uncompress %s.Z'%(ionex))
 
     return ionex
 
 def get_radec(source):
-    yaml_file = '/home/chege/Desktop/curtin_work/vega/1065877080.yaml'
+    '''
+    Gets the Ra and Dec of a source from the yaml file who's path is given.
+    '''
+    yaml_file = '/home/chege/Desktop/curtin_work/vega/1065880128.yaml'
     with open(yaml_file, 'r') as f:
                 unpacked = yaml.load(f, Loader=SafeLoader)
                 for soc in unpacked['sources']:
@@ -55,6 +61,9 @@ def get_radec(source):
     return ra, dec
 
 def utc_local(hr_list, day):
+    '''
+    Converts the utc hours obtained from IonFR output textfile into local time.
+    '''
     local_hrs = []
     for hr in hr_list:
         date_str = '%s %s:00:00'%(str(day), str(int(hr)))
@@ -70,6 +79,9 @@ def utc_local(hr_list, day):
     
 
 def farady_plot(ionrm_txtfile1, ionrm_txtfile2, plotname,source, date1, date2):
+    '''
+    Make a plot comparing two IonFR output textiles for a given source/LoS, and dates.
+    '''
     err1 = []
     err2 = []
     farot1 = []
@@ -127,15 +139,18 @@ def farady_plot(ionrm_txtfile1, ionrm_txtfile2, plotname,source, date1, date2):
         ax0.errorbar(hour1, farot1, yerr=err1, linestyle='None',color='g')
         line2, = ax0.plot(hour2, farot2, marker='o',linestyle = ':', color='m')
         ax0.errorbar(hour2, farot2, yerr=err2, linestyle='None',color='m')
+        ax0.axvline(x=21)
+        ax0.axvline(x=27)
         #ax0.set_xlabel('Time (Hours)')
         ax0.set_ylabel(r'$\phi_{ion}  (rad m^{-2})$')
         ax0.set_ylim([0, 11.6])
-        ax0.set_xlim([14, 32])
-        ax0.set_title('FR values for dates %s and %s'%(date1, date2))
+        #ax0.set_xlim([xmin=14, xmax=32])
+        ax0.set_xbound(lower=14, upper=32)
+        ax0.set_title('Faraday depth values for source %s on %s and %s'%(source, date1, date2))
         ax0.grid(b=True, which='major',axis='both',color='#666666', linestyle='-')
         ax0.grid(True, which='minor',axis='both', color='#999999', linestyle='-', alpha=0.4)
         ax0.minorticks_on()
-        ax0.legend((line1, line2), ('%s: qam = 25'%(date1), '%s: qam = 3'%(date2)), loc='upper right')
+        ax0.legend((line1, line2), ('%s: qam = 11'%(date1), '%s: qam = 3'%(date2)), loc='upper right')
 
         '''
         ax1 = fig.add_subplot(121)
@@ -154,6 +169,9 @@ def farady_plot(ionrm_txtfile1, ionrm_txtfile2, plotname,source, date1, date2):
         '''
         ax1 = plt.subplot(gs1[1], sharex=ax0)
         line3, = ax1.plot(common_hours, perc_change, marker='o',linestyle = '-', color='c')
+        ax1.axvline(x=21)
+        ax1.axvline(x=27)
+        ax1.set_xbound(lower=14, upper=32)
         ax1.set_xlabel('Time (Hours)')
         ax1.set_ylabel('%')
         ax1.grid(b=True, which='major',axis='both',color='#666666', linestyle='-')
@@ -182,9 +200,9 @@ def farady_plot(ionrm_txtfile1, ionrm_txtfile2, plotname,source, date1, date2):
         ax2.grid(b=True, which='minor',axis='both',color='#999999', linestyle='-', alpha=0.4)
         ax2.minorticks_on()
         '''
-        fig.tight_layout()
+        #fig.tight_layout()
         #fig.text(.5, 4.5, 'Percentage difference: %s'%(mean_perc_change), ha='center')                                                                                                                          
-        fig.savefig('v2%s.png'%(plotname))
+        fig.savefig('met3vs11%s.png'%(plotname))
         #plt.show()
 
     except FileNotFoundError:
@@ -192,12 +210,15 @@ def farady_plot(ionrm_txtfile1, ionrm_txtfile2, plotname,source, date1, date2):
 
 
 
-def run_ionfr(ra, dec, source, date, time='00:00:00',sign='-', convertradec = True):
+def run_ionfr(ra, dec, source, date, time='00:00:00',sign='-', convertradec = True, lat = '26d42m12ss', lon = '116d40m15se'):
+    '''
+    Runs ionfr code given the inputs
+    Returns .txt files named after each source(los) and the date
+    '''
     ionex = get_ionex(date)
 
     scrptpath = '/home/chege/Desktop/curtin_work/ionFR/ionFRM.py'
-    lat = '26d42m12ss'
-    lon = '116d40m15se'
+    
 
     if convertradec:
         if ra<0:
@@ -226,7 +247,7 @@ def run_ionfr(ra, dec, source, date, time='00:00:00',sign='-', convertradec = Tr
 
 
 if __name__ == '__main__':
-    dates = ['2013-10-15','2013-10-23']
+    dates = ['2013-10-10','2013-10-18']
     trackable_sources = ['J004616-420739', 'J233426-412520', 'J232102-162302', 'J232519-120727', 'J232634-402715', 'J231956-272735', 'J003508-200354', 'J005906-170033']
 
     #for date in dates:

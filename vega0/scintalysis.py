@@ -48,11 +48,11 @@ def obsid_to_date(obsid): #convert obsid to date of observation
 
 
 
-def make_sets(div=0, one_night=False):
+def make_sets(one_night=True):
     obsid_files = get_yamls()
 
     if one_night:
-        obsidsets = [obsid_files[:div],obsid_files[div:]]
+        obsidsets = [obsid_files]
     
     else:
         dates = []
@@ -85,7 +85,7 @@ def compare_set_metric(obsidsets):
     for obsidlist in obsidsets:
         obsidmetrics = []
         print('................', len(obsidlist))
-        for obsid in obsidlist:
+        for obsid in obsidlist[:20]:
             obsid = int(obsid.split('.')[0])
             print(obsid)
             with open('qadb.csv') as csvfile:
@@ -97,16 +97,24 @@ def compare_set_metric(obsidsets):
                         obsidmetrics .append(float(row[9]))
                         found = True
                 if not found:
-                    obsidmetrics .append(np.nan)
+                    obsidmetrics.append(np.nan)
                     print('obsid without metric')
         setmetrics.append(obsidmetrics)
-    mean_metric = []
-    for i in setmetrics:
-        print(len(i))
-        meanmetric = np.nanmean(i)
-        mean_metric.append(meanmetric)
-    print(mean_metric)
-    return mean_metric
+    
+    return setmetrics
+
+def compare_beam_pointing(obsidsets):
+    yaml_file1 = yamlpath+'/'+obsidsets[0][0]
+    yaml_file2 = yamlpath+'/'+obsidsets[1][0]
+    with open(yaml_file1, 'r') as f:
+                unpacked = yaml.load(f, Loader=SafeLoader)
+                print(unpacked['metadata']['primary_beam_pointing_centre'])
+                print(unpacked2['metadata']['band_freq'])
+     with open(yaml_file2, 'r') as f:
+                unpacked2 = yaml.load(f, Loader=SafeLoader)
+                print(unpacked2['metadata']['primary_beam_pointing_centre'])
+                print(unpacked2['metadata']['band_freq'])
+                    
 
 def loadfile(data_file):
 	with open(data_file, 'r') as f:
@@ -141,6 +149,7 @@ def make_sourceset(same_night_obsids): #here input a list obsids from the same n
 
 def common_sources(sourcelists):
     sourceset = [set(i) for i in sourcelists]#turn each list in the sourceset in to a set.
+    #print('sourceset', sourceset)
     u = set.intersection(*sourceset)
     return u
 
@@ -233,55 +242,57 @@ def perc_err(ampscales):
 
 
 
-def scalevstime_plots(night1_obsids, night2_obsids, source, plotname, night1_mdnmetric, night2_mdnmetric, plottype = 1):
-    print('working on source %s in night one obsids..............................................................................'%(source))
-    night1_dates, night1_ampscales, night1_stds, night1_flux = get_values(night1_obsids, source)
+def scalevstime_plots(obsidsets, source, plotname, setmetrics, one_night = True):
+    if not one_night:
+        night1_obsids = obsidsets[0][:5]
+        night2_obsids = obsidsets[1][:5]
 
-    print('working on source %s in night two obsids..............................................................................'%(source))
-    night2_dates, night2_ampscales, night2_stds, night2_flux = get_values(night2_obsids, source)
+        print('working on source %s in night one obsids..............................................................................'%(source))
+        night1_dates, night1_ampscales, night1_stds, night1_flux = get_values(night1_obsids, source)
 
+        print('working on source %s in night two obsids..............................................................................'%(source))
+        night2_dates, night2_ampscales, night2_stds, night2_flux = get_values(night2_obsids, source)
 
+        night1_dates = [obsid_to_date(obsid) for obsid in night1_dates]
+        print(night1_dates[0])
+        night2_dates = [obsid_to_date(obsid) for obsid in night2_dates]
+        print(night2_dates[0])
+        #print(night1_flux)
+        print(len(night1_ampscales),len(night2_ampscales))
+        
+        #converting dates from UTC to MWA local time
+        time_format = '%Y-%m-%d %H:%M:%S'
+        utc_dates1 = [datetime.strptime(str(i), time_format) for i in night1_dates]
+        utc_dates2 = [datetime.strptime(str(i), time_format) for i in night2_dates]
+        utc_dates1 = [utc_dates1[i].replace(tzinfo=from_zone) for i in range(len(utc_dates1))]
+        utc_dates2 = [utc_dates2[i].replace(tzinfo=from_zone) for i in range(len(utc_dates2))]
 
-    night1_dates = [obsid_to_date(obsid) for obsid in night1_dates]
-    print(night1_dates[0])
-    night2_dates = [obsid_to_date(obsid) for obsid in night2_dates]
-    print(night2_dates[0])
-    #print(night1_flux)
-    print(len(night1_ampscales),len(night2_ampscales))
-    
-    #converting dates from UTC to MWA local time
-    time_format = '%Y-%m-%d %H:%M:%S'
-    utc_dates1 = [datetime.strptime(str(i), time_format) for i in night1_dates]
-    utc_dates2 = [datetime.strptime(str(i), time_format) for i in night2_dates]
-    utc_dates1 = [utc_dates1[i].replace(tzinfo=from_zone) for i in range(len(utc_dates1))]
-    utc_dates2 = [utc_dates2[i].replace(tzinfo=from_zone) for i in range(len(utc_dates2))]
+        mwadates1 = [utc_dates1[i].astimezone(to_zone) for i in range(len(utc_dates1))]
+        mwadates2 = [utc_dates2[i].astimezone(to_zone) for i in range(len(utc_dates2))]
 
-    mwadates1 = [utc_dates1[i].astimezone(to_zone) for i in range(len(utc_dates1))]
-    mwadates2 = [utc_dates2[i].astimezone(to_zone) for i in range(len(utc_dates2))]
+        #get rms values for both nights ampscales
+        rms1, naninds1 = get_rms(night1_ampscales)
+        rms2, naninds2 = get_rms(night2_ampscales)
 
-    #get rms values for both nights ampscales
-    rms1, naninds1 = get_rms(night1_ampscales)
-    rms2, naninds2 = get_rms(night2_ampscales)
+        #discard dates whose ampscales were nan
+        if len(naninds1)>0:
+            for i in naninds1:
+                print('date and std with nan ampscale discarded')
+                mwadates1.pop(i)
+                night1_stds.pop(i)
 
-    #discard dates whose ampscales were nan
-    if len(naninds1)>0:
-        for i in naninds1:
-            print('date and std with nan ampscale discarded')
-            mwadates1.pop(i)
-            night1_stds.pop(i)
+        if len(naninds2)>0:
+            for i in naninds2:
+                print('date and std with nan ampscale discarded')
+                mwadates2.pop(i)
+                night2_stds.pop(i)
 
-    if len(naninds2)>0:
-        for i in naninds2:
-            print('date and std with nan ampscale discarded')
-            mwadates2.pop(i)
-            night2_stds.pop(i)
-
-
-    #make the plot 
-    #make the plot
-    if plottype == 1:
         night1_err = perc_err(night1_ampscales)
         night2_err = perc_err(night2_ampscales)
+        #make the plot 
+
+        night1_mdnmetric = np.nanmean(setmetrics[0])
+        night2_mdnmetric = np.nanmean(setmetrics[1])
 
         fig  = plt.figure(figsize = (16,12))
         gs1 = gridspec.GridSpec(2, 2, height_ratios=[2,.5])
@@ -298,7 +309,7 @@ def scalevstime_plots(night1_obsids, night2_obsids, source, plotname, night1_mdn
 
         ax1 = plt.subplot(gs1[1])#, sharey=ax0)
         ax1.plot_date(mwadates2, night2_ampscales, 'o', linestyle = ':', color='m')
-        ax1.errorbar(mwadates2, night2_ampscales, yerr=night2_stds, linestyle='None',color='M')
+        ax1.errorbar(mwadates2, night2_ampscales, yerr=night2_stds, linestyle='None',color='m')
         ax1.set_ylim([0.6, 1.4])
         #ax1.set_ylabel('Median amplitude scaling factor')
         ax1.set_xlabel('Obsid date, time in 10/2013')
@@ -349,31 +360,53 @@ def scalevstime_plots(night1_obsids, night2_obsids, source, plotname, night1_mdn
         
         fig.text(0.5, 0.12, 'Date, time on October 2013', ha='center')
         fig.autofmt_xdate()
-        fig.savefig('v4_%s'%(plotname))                                                                                                                                                     
+        fig.savefig('try_%s'%(plotname))                                                                                                                                                     
+        plt.show()
+
+    else: #Here we are analyzing obsids without dividing them into nights
+        dates, ampscales, stds, flux = get_values(obsidsets[0][:20], source)
+        #discard ampscales whose obsids dont have metrics
+        i =0
+        print(len(setmetrics[0]), len(ampscales), len(stds))
+        for ind, val in enumerate(setmetrics[0]):
+            print(i)
+            if np.isnan(val):
+                print('nan metric value encountered')
+                ampscales[ind] = np.nan #replace with nan value
+                stds[ind] = np.nan    #replace with nan value
+                print('replaced ampscale and std values with nan')
+            i+=1
+        n = len(ampscales)
+        model = np.ones(n)
+        rms = np.sqrt(np.nanmean((ampscales - model) ** 2))
+        #rms = sqrt(mean_squared_error(model,ampscales))
+        rms = round(rms, 4)
+        plt.plot(setmetrics[0], ampscales, 'o', linestyle = 'None', color='m')
+        plt.errorbar(setmetrics[0], ampscales, yerr=stds, linestyle='None',color='m')
+        plt.grid()
+        plt.savefig('try_%s'%(plotname))                                                                                                                                                    
         plt.show()
 
 
-if __name__ == '__main__':
-    #obsidsets = make_sets()
-    #night1_obsids = obsidsets[0]
-    #night2_obsids = obsidsets[1]
-    #trackable_sources = sources_to_track(obsidsets)
-    #metrics = compare_set_metric(obsidsets)
-    #night1_mdnmetric = metrics[0]
-    #night2_mdnmetric = metrics[1]
-    night1_obsids=['1065877080.yaml', '1065877200.yaml', '1065877320.yaml', '1065877440.yaml', '1065877568.yaml', '1065877688.yaml', '1065877808.yaml', '1065877928.yaml', '1065878056.yaml', '1065878176.yaml', '1065878296.yaml', '1065878664.yaml', '1065878784.yaml', '1065878904.yaml', '1065879032.yaml', '1065879152.yaml', '1065879272.yaml', '1065879392.yaml', '1065879520.yaml', '1065879640.yaml', '1065879760.yaml', '1065879880.yaml', '1065880008.yaml', '1065880128.yaml', '1065880248.yaml', '1065880368.yaml', '1065880496.yaml', '1065880616.yaml', '1065880736.yaml', '1065880856.yaml', '1065880984.yaml', '1065881104.yaml', '1065881224.yaml', '1065881344.yaml', '1065881472.yaml', '1065881592.yaml', '1065881712.yaml', '1065881832.yaml', '1065881960.yaml', '1065882080.yaml', '1065882200.yaml', '1065882448.yaml', '1065882688.yaml', '1065882936.yaml', '1065883056.yaml', '1065883176.yaml', '1065883296.yaml', '1065883424.yaml', '1065883544.yaml', '1065883664.yaml', '1065883784.yaml', '1065883912.yaml', '1065884152.yaml', '1065885248.yaml', '1065885616.yaml']
 
-    night2_obsids=['1066566392.yaml', '1066566512.yaml', '1066566632.yaml', '1066566760.yaml', '1066566880.yaml', '1066567000.yaml', '1066567120.yaml', '1066567248.yaml', '1066567368.yaml', '1066567488.yaml', '1066567608.yaml', '1066567736.yaml', '1066567976.yaml', '1066568096.yaml', '1066568224.yaml', '1066568344.yaml', '1066568464.yaml', '1066568584.yaml', '1066568712.yaml', '1066568832.yaml', '1066568952.yaml', '1066569072.yaml', '1066569200.yaml', '1066569320.yaml', '1066569440.yaml', '1066569560.yaml', '1066569688.yaml', '1066569808.yaml', '1066569928.yaml', '1066570048.yaml', '1066570176.yaml', '1066570296.yaml', '1066570416.yaml', '1066570536.yaml', '1066570664.yaml', '1066570784.yaml', '1066570904.yaml', '1066571024.yaml', '1066571152.yaml', '1066571272.yaml', '1066571392.yaml', '1066571512.yaml', '1066571640.yaml', '1066571760.yaml', '1066571880.yaml', '1066572000.yaml', '1066572128.yaml', '1066572248.yaml', '1066572368.yaml', '1066572488.yaml', '1066572616.yaml', '1066572736.yaml', '1066572856.yaml', '1066572976.yaml', '1066573104.yaml', '1066573224.yaml', '1066573344.yaml', '1066573464.yaml', '1066573592.yaml', '1066573712.yaml', '1066573832.yaml', '1066573952.yaml', '1066574080.yaml', '1066574200.yaml', '1066574320.yaml', '1066574440.yaml', '1066574568.yaml', '1066574688.yaml', '1066574808.yaml', '1066574928.yaml', '1066575176.yaml', '1066575296.yaml', '1066575416.yaml', '1066575544.yaml', '1066575664.yaml', '1066575784.yaml', '1066575904.yaml', '1066576032.yaml', '1066576152.yaml', '1066576272.yaml', '1066576392.yaml', '1066576520.yaml', '1066576640.yaml', '1066576760.yaml', '1066576880.yaml', '1066577008.yaml', '1066577128.yaml', '1066577248.yaml', '1066577368.yaml', '1066577496.yaml', '1066577616.yaml', '1066577736.yaml', '1066577856.yaml', '1066577984.yaml', '1066578104.yaml', '1066578224.yaml', '1066578344.yaml', '1066578472.yaml', '1066578592.yaml', '1066578712.yaml', '1066578832.yaml']
+if __name__ == '__main__':
+    obsidsets = make_sets()
+    #trackable_sources = sources_to_track(obsidsets)
+
+    #obsidsets = [['1065877080.yaml', '1065877200.yaml', '1065877320.yaml', '1065877440.yaml', '1065877568.yaml', '1065877688.yaml', '1065877808.yaml', '1065877928.yaml', '1065878056.yaml', '1065878176.yaml', '1065878296.yaml', '1065878664.yaml', '1065878784.yaml', '1065878904.yaml', '1065879032.yaml', '1065879152.yaml', '1065879272.yaml', '1065879392.yaml', '1065879520.yaml', '1065879640.yaml', '1065879760.yaml', '1065879880.yaml', '1065880008.yaml', '1065880128.yaml', '1065880248.yaml', '1065880368.yaml', '1065880496.yaml', '1065880616.yaml', '1065880736.yaml', '1065880856.yaml', '1065880984.yaml', '1065881104.yaml', '1065881224.yaml', '1065881344.yaml', '1065881472.yaml', '1065881592.yaml', '1065881712.yaml', '1065881832.yaml', '1065881960.yaml', '1065882080.yaml', '1065882200.yaml', '1065882448.yaml', '1065882688.yaml', '1065882936.yaml', '1065883056.yaml', '1065883176.yaml', '1065883296.yaml', '1065883424.yaml', '1065883544.yaml', '1065883664.yaml', '1065883784.yaml', '1065883912.yaml', '1065884152.yaml', '1065885248.yaml', '1065885616.yaml'],
+        #['1066566392.yaml', '1066566512.yaml', '1066566632.yaml', '1066566760.yaml', '1066566880.yaml', '1066567000.yaml', '1066567120.yaml', '1066567248.yaml', '1066567368.yaml', '1066567488.yaml', '1066567608.yaml', '1066567736.yaml', '1066567976.yaml', '1066568096.yaml', '1066568224.yaml', '1066568344.yaml', '1066568464.yaml', '1066568584.yaml', '1066568712.yaml', '1066568832.yaml', '1066568952.yaml', '1066569072.yaml', '1066569200.yaml', '1066569320.yaml', '1066569440.yaml', '1066569560.yaml', '1066569688.yaml', '1066569808.yaml', '1066569928.yaml', '1066570048.yaml', '1066570176.yaml', '1066570296.yaml', '1066570416.yaml', '1066570536.yaml', '1066570664.yaml', '1066570784.yaml', '1066570904.yaml', '1066571024.yaml', '1066571152.yaml', '1066571272.yaml', '1066571392.yaml', '1066571512.yaml', '1066571640.yaml', '1066571760.yaml', '1066571880.yaml', '1066572000.yaml', '1066572128.yaml', '1066572248.yaml', '1066572368.yaml', '1066572488.yaml', '1066572616.yaml', '1066572736.yaml', '1066572856.yaml', '1066572976.yaml', '1066573104.yaml', '1066573224.yaml', '1066573344.yaml', '1066573464.yaml', '1066573592.yaml', '1066573712.yaml', '1066573832.yaml', '1066573952.yaml', '1066574080.yaml', '1066574200.yaml', '1066574320.yaml', '1066574440.yaml', '1066574568.yaml', '1066574688.yaml', '1066574808.yaml', '1066574928.yaml', '1066575176.yaml', '1066575296.yaml', '1066575416.yaml', '1066575544.yaml', '1066575664.yaml', '1066575784.yaml', '1066575904.yaml', '1066576032.yaml', '1066576152.yaml', '1066576272.yaml', '1066576392.yaml', '1066576520.yaml', '1066576640.yaml', '1066576760.yaml', '1066576880.yaml', '1066577008.yaml', '1066577128.yaml', '1066577248.yaml', '1066577368.yaml', '1066577496.yaml', '1066577616.yaml', '1066577736.yaml', '1066577856.yaml', '1066577984.yaml', '1066578104.yaml', '1066578224.yaml', '1066578344.yaml', '1066578472.yaml', '1066578592.yaml', '1066578712.yaml', '1066578832.yaml']]
+    
+    setmetrics = compare_set_metric(obsidsets)
 
     trackable_sources = ['J004616-420739', 'J233426-412520', 'J232102-162302', 'J232519-120727', 'J232634-402715', 'J231956-272735', 'J003508-200354', 'J005906-170033']
     #no_amps = ['J002549-260211', 'J235701-344532', 'J002430-292847']
-    night1_mdnmetric = 25.472890624999998
-    night2_mdnmetric = 3.308683050847457
+    #night1_mdnmetric = 25.472890624999998
+    #night2_mdnmetric = 3.308683050847457
 
     for i in range(len(trackable_sources)):
         print('.......................................................This is source %s of %s'%(str(i+1), str(len(trackable_sources))))
         #trackable_sources = sources_to_track(obsidsets)
         #print(trackable_sources[:11])
         source_to_track = trackable_sources[i]
-        scalevstime_plots(night1_obsids, night2_obsids, source_to_track, '%s.png'%(source_to_track), night1_mdnmetric, night2_mdnmetric, plottype = 1)
+        scalevstime_plots(obsidsets, source_to_track, '%s.png'%(source_to_track), setmetrics, one_night = True)
 
