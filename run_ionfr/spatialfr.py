@@ -12,6 +12,7 @@ from scipy.interpolate import griddata
 from scipy.optimize import curve_fit
 from mpl_toolkits.mplot3d import Axes3D
 import seaborn as sns
+import plotly.graph_objects as go
 
 
 path = '/home/chege/Desktop/curtin_work/vega/'
@@ -86,28 +87,32 @@ def get_fr_value(ionfr_txt_file, hour):
     return fr_value, fr_value_err
 
 
-def make_df(hour, csvfyl=None):
+def make_df(hour, obsid, csvfyl=None):
     if csvfyl is not None:  # if we have a csv file with ra dec, fr, and fr_err
         df = pd.read_csv(csvfyl)
         df = df.drop(df.columns[0], axis=1)
     else:
-        txtdir = '/home/chege/Desktop/curtin_work/run_ionfr/singleLOScomparisons'
-        fyls = os.listdir(txtdir)
+        txtdir = '/home/chege/Desktop/curtin_work/run_ionfr'#/singleLOScomparisons'
+        fyls = sorted([fyl for fyl in os.listdir(txtdir) if fyl.split('.')[-1] == 'txt'])
+        print(len(fyls))
         ras = []
         decs = []
         frs = []
         frs_errs = []
+        i = 1
         for fyl in fyls:
-            # print(fyl)
-            if fyl.split('.')[-1] == 'txt':
-                source = fyl.split('_')[0]
-                ra, dec = run_ionfr.get_radec(source)
-                ras.append(float(ra))
-                decs.append(float(dec))
-                fylpath = txtdir + '/' + fyl
-                fr_value, fr_value_err = get_fr_value(fylpath, hour)
-                frs.append(float(fr_value))
-                frs_errs.append(float(fr_value_err))
+            print(i)
+            i += 1
+            # if fyl.split('.')[-1] == 'txt':
+            print(fyl)
+            source = fyl.split('_')[0]
+            ra, dec = run_ionfr.get_radec(source, obsid)
+            ras.append(float(ra))
+            decs.append(float(dec))
+            fylpath = txtdir + '/' + fyl
+            fr_value, fr_value_err = get_fr_value(fylpath, hour)
+            frs.append(float(fr_value))
+            frs_errs.append(float(fr_value_err))
         df = pd.DataFrame(
             list(zip(ras, decs, frs, frs_errs)),
             columns=['ra', 'dec', 'fr', 'fr_err'])
@@ -206,20 +211,20 @@ def interpfr(
                         dec_centre+radius*crop_factor)
     print(cropped_beam_extent)
 
-    # grid_fr = cropper(grid_fr)
-
+    grid_fr = cropper(grid_fr)
+    np.savetxt("%s_%shr_interpfr_grid.csv" % (obsid, hr), grid_fr, delimiter=",")
     return grid_fr, cropped_beam_extent
 
 
 def plot_interp_fr(grid, beam_extent):
     fig, ax = plt.subplots(1, 1)
     img1 = ax.imshow(
-        grid, cmap="plasma", origin="lower")
+        grid, cmap="plasma", extent=beam_extent, origin="lower")
     ax.set_xlabel("RA [deg]")
     ax.set_ylabel("Dec [deg]")
     fig.colorbar(img1, ax=ax, format="%.2f", fraction=0.046, pad=0.04)
     fig.suptitle('Spatial Faraday depth at %shrs %s' % (hr, str(obsid)))
-    plt.savefig('%s_%shrs_ionfr.png' % (obsid, hr))
+    plt.savefig('%s_%shrs_ionfr_try3cropped.png' % (obsid, hr))
 
 
 def plane_fit(grid):
@@ -228,10 +233,12 @@ def plane_fit(grid):
 
     X1, X2 = np.mgrid[:m, :m]
 
-    fig = plt.figure()
+    fig = plt.figure(figsize=(18, 15))
     ax = fig.add_subplot(3, 1, 1, projection='3d')
     jet = plt.get_cmap('jet')
-    ax.plot_surface(X1, X2, grid, rstride=1, cstride=1, cmap=jet, linewidth=0)
+    plasma = plt.get_cmap('plasma')
+    ff = ax.plot_surface(X1, X2, grid, rstride=1, cstride=1, cmap=plasma, linewidth=0)
+    fig.colorbar(ff, shrink=0.8)
 
     # Regression
     X = np.hstack((np.reshape(X1, (m*m, 1)), np.reshape(X2, (m*m, 1))))
@@ -240,55 +247,91 @@ def plane_fit(grid):
 
     theta = np.dot(np.dot(np.linalg.pinv(np.dot(X.transpose(), X)), X.transpose()), YY)
 
-    ax.scatter(grid[:, 0], grid[:, 1], grid[:, 2], c='r', s=20)
+    #ax.scatter(grid[:, 0], grid[:, 1], grid[:, 2], c='r', s=20)
 
     plane = np.reshape(np.dot(X, theta), (m, m))
 
     ax = fig.add_subplot(3, 1, 2, projection='3d')
-    ax.plot_surface(X1, X2, plane)
-    # ax.plot_surface(X1, X2, grid, rstride=1, cstride=1, cmap=jet, linewidth=0)
+    surf = ax.plot_surface(X1, X2, plane)  #, cmap=jet)
+    ax.plot_surface(X1, X2, grid, rstride=1, cstride=1, cmap=plasma, linewidth=0)
+    fig.colorbar(surf, shrink=0.8)
+    
 
     # Subtraction
     grid_sub = grid - plane
     ax = fig.add_subplot(3, 1, 3, projection='3d')
-    ax.plot_surface(X1, X2, grid_sub, rstride=1, cstride=1, cmap=jet, linewidth=0)
+    subt = ax.plot_surface(X1, X2, grid_sub, rstride=1, cstride=1, cmap=plasma, linewidth=0)
+    fig.colorbar(subt, shrink=0.8)
 
     plt.show()
+    return grid_sub
 
 
 def linefit(grid, beam_lim):
-    y = grid[:, 90]
-    print(y.shape)
-    x = np.linspace(beam_lim[2], beam_lim[3], len(y))
-    regplot = sns.regplot(x=x, y=y, color="g")
-    # plt.show()
-    fig = regplot.get_figure()
-    fig.savefig('1065880128_14hrs_1ra_ionfr.png')
+    slicepoints = np.linspace(60, 76, 8)
+    for i in slicepoints:
+        y = grid[int(i), :]
+        print(y.shape)
+        ras = np.linspace(beam_lim[0], beam_lim[1], len(y))
+        x = np.linspace(beam_lim[2], beam_lim[3], len(y))
+        plt.plot(x, y, label=str(round(ras[int(i)], 1)))
+        #regplot = sns.regplot(x=x, y=y)
+        #yy = sns.residplot(x, y, lowess=True, scatter_kws={"color": "black"}, line_kws={"color": "red"})
+        #yy.set(xlabel='Dec (deg)', ylabel='Residuals', title='Fitted rotation measure curve and residuals (constant Ra)')
+    plt.legend(loc="upper center", title='RA [deg]')
+    plt.title('Faraday depth residuals along constant RA')
+    plt.xlabel('DEC [deg]')
+    plt.ylabel("r'$\phi$' Residuals")
+    #plt.show()
+    plt.savefig('1065880128_14hrs_residuals_constdeg.png')
+    #fig = regplot.get_figure()
+    #fig.savefig('1065880128_14hrs_1ra_ionfr.png')
 
 
-def line_fit(df):
-    y = grid[:, 90]
-    print(y.shape)
-    x = np.linspace(beam_lim[2], beam_lim[3], len(y))
-    regplot = sns.regplot(x=x, y=y, color="g")
-    # plt.show()
-    fig = regplot.get_figure()
-    fig.savefig('1065880128_14hrs_1ra_ionfr.png')
+def spatial_rmion_plot(ra, dec, fr, fr_err, obsid):
+    print('trying plotly')
+    size = fr_err
+    fig = go.Figure(data=[go.Scatter(
+        x=ra,
+        y=dec,
+        mode='markers',
+        text=fr,
+        hoverinfo='text',
+        marker=dict(
+            color=fr,
+            colorscale='Magma_r',
+            size=fr_err,
+            # sizemode = 'diameter',
+            showscale=True,
+            sizeref=2. * max(size) / (6**2)
+            )
+    )])
+    fig.update_layout(
+                    title='colour=mean, size=std',
+                    xaxis=dict(title='Ra [deg]'),
+                    yaxis=dict(title='Dec [deg]'))
+                    # xaxis=dict(range=[beam_lim[0], beam_lim[1]], title='Ra [deg]'),
+                    # yaxis=dict(range=[beam_lim[2], beam_lim[3]], title='Dec [deg]'))
+
+    # fig.update_xaxes(autorange="reversed")
+    # fig.show()
+    fig.write_image('%s_rm_ion_14hrs_try3.png' % (obsid))
 
 
 if __name__ == '__main__':
     # files = sorted(os.listdir(path))
     # for i in range(len(files)):
     # obsid = files[i].split('.')[0]
-    # get_obsid_ionfr_txts(1065880128)
-    obsid = 1065880128
+    obsid = 1065877200
     hr = 14
-    df = make_df(hr, csvfyl='1065880128_ionfr_p3.csv')
+    # get_obsid_ionfr_txts(obsid)
+    df = make_df(hr, obsid)  # csvfyl='1065880128_ionfr_p3_3test.csv')
+    df.to_csv('%s_ionfr_p3_3test.csv' % (obsid))
     print(df.head())
-    # df.to_csv('1065880128_ionfr_p3.csv')
+    spatial_rmion_plot(df.ra, df.dec, df.fr, df.fr_err, obsid)
     radius, fra, fdec, f_fr, f_fr_err, ra_centre, dec_centre = get_center(df)
     grid, beam_extent = interpfr(
         radius, fra, fdec, f_fr, f_fr_err, ra_centre, dec_centre, obsid, hr)
     plot_interp_fr(grid, beam_extent)
-    # plane_fit(grid)
-    # linefit(grid, beam_extent)
+    grid_sub = plane_fit(grid)
+    linefit(grid_sub, beam_extent)
