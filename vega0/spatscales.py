@@ -19,7 +19,7 @@ from scipy.optimize import curve_fit
 import os
 sns.set()
 '''
-Plot the mean amplitude scales of each osurce in a single
+Plot the median amplitude scales of each osurce in a single
 yaml file as a function of ra nad dec.
 Interpolate using scipy and try to obtain the background.
 '''
@@ -42,8 +42,8 @@ def loadfile(data_file):
         ra.append(unpacked['sources'][source]['ra'])
         flux.append(unpacked['sources'][source]['flux_density'])
         ampscales.append(
-            np.nanmean(unpacked['sources'][source]['amp_scales']))
-        stds.append(np.nanstd(unpacked['sources'][source]['amp_scales']))
+            np.nanmedian(unpacked['sources'][source]['amp_scales'][1:13]))
+        stds.append(np.nanstd(unpacked['sources'][source]['amp_scales'][1:13]))
     # ampscales = np.nan_to_num(ampscales)
     # print(len(ampscales))
 
@@ -52,17 +52,25 @@ def loadfile(data_file):
         columns=['ra', 'dec', 'ampscales', 'stds', 'flux', 'names'])
     df = df.dropna(axis=0)  # drop all rows with nan value in any column
     # df = df[(np.abs(stats.zscore(df.stds)) < 3).all(axis=1)
-    df = df[((df.stds - df.stds.mean()) / df.stds.std()).abs() < 3]  # filter
+    df = df[((df.stds - df.stds.median()) / df.stds.std()).abs() < 3]  # filter
     # rows which dont have outlier stds (<3*\mu std)
     # Get the rows with N brightest sources.
-    df = df.nlargest(900, 'flux', keep='all')
+    df = df.nlargest(400, 'flux', keep='all')
     print(df.flux)
     return df
 
 
 def get_center(df):
-    bulk_centre_ra = np.mean(df.ra)
-    bulk_centre_dec = np.mean(df.dec)
+    """returns filtered dimensions centered at the fitted MWA primary beam pointing center
+    
+    Arguments:
+        df {pandas dataframe} -- dataframe with ra, dec, median amplitude scales and std
+    
+    Returns:
+        tuple-- filtered values that are actually within the estimated MWA primary beam
+    """
+    bulk_centre_ra = np.median(df.ra)
+    bulk_centre_dec = np.median(df.dec)
 
     radius = determine_radius(df)
 
@@ -89,8 +97,8 @@ def determine_radius(df):
     # Use 2x the determined sigma as a cutoff for sources, in steps of 2.5 deg.
     ra_hist, ra_bins = np.histogram(df.ra, bins=50)
     dec_hist, dec_bins = np.histogram(df.dec, bins=50)
-    ra_p0 = [max(ra_hist), np.mean(ra_bins), 8]
-    dec_p0 = [max(dec_hist), np.mean(dec_bins), 8]
+    ra_p0 = [max(ra_hist), np.median(ra_bins), 8]
+    dec_p0 = [max(dec_hist), np.median(dec_bins), 8]
 
     def gaussian(x, a, b, c):
         return a * np.exp(-(x-b)**2 / (2*c**2))
@@ -98,7 +106,7 @@ def determine_radius(df):
         ra_popt, _ = curve_fit(gaussian, ra_bins[:-1], ra_hist, p0=ra_p0)
         dec_popt, _ = curve_fit(gaussian, dec_bins[:-1], dec_hist, p0=dec_p0)
         radius = np.ceil(
-            (2*np.mean([abs(ra_popt[2]), abs(dec_popt[2])]))/2.5)*2.5
+            (2*np.median([abs(ra_popt[2]), abs(dec_popt[2])]))/2.5)*2.5
         # Check this radius against the extent of source available.
         if radius > max(df.ra) - min(df.ra) or radius > max(df.dec) - min(df.dec):
             radius = max([df.ra.max() - df.ra.min(), df.dec.max() - df.dec.min()])/2
@@ -128,18 +136,18 @@ def spatial_scales_plot(ra, dec, ampscales, stds, obsid, beam_lim):
             )
     )])
     fig.update_layout(
-                    title='colour=mean, size=std',
+                    title='colour=median, size=std',
                     xaxis=dict(range=[beam_lim[0], beam_lim[1]], title='Ra [deg]'),
                     yaxis=dict(range=[beam_lim[2], beam_lim[3]], title='Dec [deg]'))
 
     # fig.update_xaxes(autorange="reversed")
     # fig.show()
-    fig.write_image('%s_mean_amps_900.png' % (obsid))
+    fig.write_image('%s_median_amps1_13_400_innercrop.png' % (obsid))
 
 
 def bgplot(
             radius, ra, dec, ampscales, stds, ra_centre, dec_centre, obsid,
-            interp_method='linear', resolution=900):
+            interp_method='linear', resolution=1000):
     grid_x, grid_y = np.meshgrid(
         np.linspace(-radius, radius, resolution),
         np.linspace(-radius, radius, resolution))
@@ -172,6 +180,7 @@ def bgplot(
                         ra_centre-radius*crop_factor,
                         dec_centre-radius*crop_factor,
                         dec_centre+radius*crop_factor)
+    cropped_beam_extent = [10, -5, -35, -20]
     print(obsid, 'cropped beam limits', cropped_beam_extent)
 
     grid_med = cropper(grid_med)
@@ -180,7 +189,7 @@ def bgplot(
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 10))
     fig.suptitle(
-        '%s amplitude scales: mean (left), standard deviation \
+        '%s amplitude scales: median (left), standard deviation \
         (right)' % (obsid))
     img1 = ax1.imshow(
         grid_med, extent=cropped_beam_extent, cmap="plasma", origin="lower")
@@ -188,7 +197,7 @@ def bgplot(
     img2 = ax2.imshow(
         grid_std, vmin=0.0, vmax=0.4, extent=cropped_beam_extent, cmap="plasma", origin="lower")
     fig.colorbar(img2, ax=ax2, format="%.2f", fraction=0.046, pad=0.04)
-    plt.savefig('%smean_linear_interp900.png' % (obsid))
+    plt.savefig('%smedstd_lininterp400_1_13_innercrop.png' % (obsid))
     '''
     fig, ax = plt.subplots(1, 1)
     img1 = ax.imshow(grid_std, vmin=0.0, vmax=0.8, extent=cropped_beam_extent,
@@ -197,7 +206,7 @@ def bgplot(
     ax.set_ylabel("Dec [deg]")
     fig.colorbar(img1, ax=ax, format="%.2f",fraction=0.046, pad=0.04)
     fig.suptitle('standard deviation of amplitude scales')
-    plt.savefig('%s_stdamps_900brightest.png' % (obsid))
+    plt.savefig('%s_stdamps_400brightest.png' % (obsid))
     '''
 
 
@@ -212,7 +221,7 @@ def cropper(matrix, crop_factor=1./np.sqrt(2)):
 if __name__ == "__main__":
     path = '/home/chege/Desktop/curtin_work/vega/'
     files = sorted(os.listdir(path))
-    for i in files[:55]:
+    for i in files[:25]:
         obsid = i.split('.')[0]
         data_file = '%s' % (path+i)
         df = loadfile(data_file)
