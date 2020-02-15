@@ -55,7 +55,7 @@ def loadfile(data_file):
     df = df[((df.stds - df.stds.median()) / df.stds.std()).abs() < 3]  # filter
     # rows which dont have outlier stds (<3*\mu std)
     # Get the rows with N brightest sources.
-    df = df.nlargest(400, 'flux', keep='all')
+    df = df.nlargest(500, 'flux', keep='all')
     print(df.flux)
     return df
 
@@ -142,15 +142,15 @@ def spatial_scales_plot(ra, dec, ampscales, stds, obsid, beam_lim):
 
     # fig.update_xaxes(autorange="reversed")
     # fig.show()
-    fig.write_image('%s_median_amps1_13_400_innercrop.png' % (obsid))
+    fig.write_image('%s_median_amps_1_13_500.png' % (obsid))
 
 
 def bgplot(
             radius, ra, dec, ampscales, stds, ra_centre, dec_centre, obsid,
-            interp_method='linear', resolution=1000):
+            interp_method='linear', resolution=200):
     grid_x, grid_y = np.meshgrid(
-        np.linspace(-radius, radius, resolution),
-        np.linspace(-radius, radius, resolution))
+        np.linspace(-radius+5.25, radius-5.25, resolution),
+        np.linspace(-radius+5.25, radius-5.25, resolution))
 
     grid_x += ra_centre
     grid_y += dec_centre
@@ -180,7 +180,7 @@ def bgplot(
                         ra_centre-radius*crop_factor,
                         dec_centre-radius*crop_factor,
                         dec_centre+radius*crop_factor)
-    cropped_beam_extent = [10, -5, -35, -20]
+
     print(obsid, 'cropped beam limits', cropped_beam_extent)
 
     grid_med = cropper(grid_med)
@@ -195,9 +195,9 @@ def bgplot(
         grid_med, extent=cropped_beam_extent, cmap="plasma", origin="lower")
     fig.colorbar(img1, ax=ax1, format="%.2f", fraction=0.046, pad=0.04)
     img2 = ax2.imshow(
-        grid_std, vmin=0.0, vmax=0.4, extent=cropped_beam_extent, cmap="plasma", origin="lower")
+        grid_std, extent=cropped_beam_extent, cmap="plasma", origin="lower")
     fig.colorbar(img2, ax=ax2, format="%.2f", fraction=0.046, pad=0.04)
-    plt.savefig('%smedstd_lininterp400_1_13_innercrop.png' % (obsid))
+    plt.savefig('%s_medstd_lininterp500_1_13.png' % (obsid))
     '''
     fig, ax = plt.subplots(1, 1)
     img1 = ax.imshow(grid_std, vmin=0.0, vmax=0.8, extent=cropped_beam_extent,
@@ -206,7 +206,7 @@ def bgplot(
     ax.set_ylabel("Dec [deg]")
     fig.colorbar(img1, ax=ax, format="%.2f",fraction=0.046, pad=0.04)
     fig.suptitle('standard deviation of amplitude scales')
-    plt.savefig('%s_stdamps_400brightest.png' % (obsid))
+    plt.savefig('%s_stdamps_500brightest.png' % (obsid))
     '''
 
 
@@ -221,14 +221,16 @@ def cropper(matrix, crop_factor=1./np.sqrt(2)):
 if __name__ == "__main__":
     path = '/home/chege/Desktop/curtin_work/vega/'
     files = sorted(os.listdir(path))
-    for i in files[:25]:
-        obsid = i.split('.')[0]
-        data_file = '%s' % (path+i)
-        df = loadfile(data_file)
-        radius, fra, fdec, f_ampscales, f_stds, ra_centre, dec_centre \
-            = get_center(df)
-        # spatial_scales_plot(df.ra, df.dec, df.ampscales, df.stds, obsid)
-        bgplot(
-            radius, fra, fdec, f_ampscales, f_stds, ra_centre, dec_centre,
-            obsid, interp_method='linear'
-            )
+    files2 = ['1065449920', '1065450160']
+    for i in files:
+        if i.split('.')[0] in files2:
+            obsid = i.split('.')[0]
+            data_file = '%s' % (path+i)
+            df = loadfile(data_file)
+            radius, fra, fdec, f_ampscales, f_stds, ra_centre, dec_centre \
+                = get_center(df)
+            # spatial_scales_plot(df.ra, df.dec, df.ampscales, df.stds, obsid)
+            bgplot(
+                radius, fra, fdec, f_ampscales, f_stds, ra_centre, dec_centre,
+                obsid, interp_method='linear'
+                )

@@ -92,7 +92,7 @@ def make_df(hour, obsid, csvfyl=None):
         df = pd.read_csv(csvfyl)
         df = df.drop(df.columns[0], axis=1)
     else:
-        txtdir = '/home/chege/Desktop/curtin_work/run_ionfr/singleLOScomparisons/1065877200_frtxts'
+        txtdir = '/home/chege/Desktop/curtin_work/run_ionfr/singleLOScomparisons/1066568224_frtxts'
         fyls = sorted([fyl for fyl in os.listdir(txtdir) if fyl.split('.')[-1] == 'txt'])
         print(len(fyls))
         ras = []
@@ -124,9 +124,12 @@ def make_df(hour, obsid, csvfyl=None):
             columns=['ra', 'dec', 'flux', 'ampscales', 'stds', 'fr', 'fr_err'])
         print('made dataframe with radec and fr values')
     df = df.dropna(axis=0)
+    # blacklist = df[((df.stds - df.stds.median()) / df.stds.std()).abs() > 3]
+    # print(blacklist)
+    # blacklist.to_csv('blacklist_sources.csv', mode='a', header=False)
     df = df[((df.stds - df.stds.median()) / df.stds.std()).abs() < 3]
-    df = df.nlargest(900, 'flux', keep='all')
-    df.to_csv('%s_%shrs_ionfr.csv' % (obsid, hour))
+    df = df.nlargest(700, 'flux', keep='all')
+    # df.to_csv('%s_%shrs_ionfr.csv' % (obsid, hour))
     return df
 
 
@@ -195,18 +198,17 @@ def interpfr(
             radius, ra, dec, fr, fr_err, ra_centre, dec_centre, obsid, hr,
             interp_method='linear', resolution=200):
     grid_x, grid_y = np.meshgrid(
-                                np.linspace(-radius, radius-2, resolution),
-                                np.linspace(-radius, radius-2, resolution))
+                                np.linspace(-radius+5.25, radius-5.25, resolution),
+                                np.linspace(-radius+5.25, radius-5.25, resolution))
 
     grid_x += ra_centre
     grid_y += dec_centre
 
-    grid_fr = np.flipud(
-                        np.fliplr(
-                                griddata(
-                                        np.vstack((ra, dec)).T, fr,
-                                        (grid_x, grid_y), method=interp_method,
-                                        fill_value=0)))
+    grid_fr = np.fliplr(
+                        griddata(
+                                np.vstack((ra, dec)).T, fr,
+                                (grid_x, grid_y), method=interp_method,
+                                fill_value=0))
 
     beam_extent = (
                     ra_centre+radius,
@@ -223,19 +225,19 @@ def interpfr(
     print(cropped_beam_extent)
 
     grid_fr = cropper(grid_fr)
-    np.savetxt("%s_%shr_interpfr_grid.csv" % (obsid, hr), grid_fr, delimiter=",")
+    # np.savetxt("%s_%shr_interpfr_grid.csv" % (obsid, hr), grid_fr, delimiter=",")
     return grid_fr, cropped_beam_extent
 
 
 def plot_interp_fr(grid, beam_extent):
-    fig, ax = plt.subplots(1, 1)
+    fig, ax = plt.subplots(1, 1, figsize=(15, 12))
     img1 = ax.imshow(
         grid, cmap="plasma", extent=beam_extent, origin="lower")
     ax.set_xlabel("RA [deg]")
     ax.set_ylabel("Dec [deg]")
     fig.colorbar(img1, ax=ax, format="%.2f", fraction=0.046, pad=0.04)
-    fig.suptitle('Spatial Faraday depth at %shrs %s' % (hr, str(obsid)))
-    plt.savefig('%s_%shrs_ionfr_try3cropped.png' % (obsid, hr))
+    fig.suptitle('Interpolated Faraday depth at %shrs %s' % (hr, str(obsid)))
+    plt.savefig('%s_%shrs_ionfr_interped.png' % (obsid, hr))
 
 
 def plane_fit(grid, obsid, hr):
@@ -278,26 +280,26 @@ def plot_3d_plane_fit(X1, X2, grid, grid_sub, plane, obsid, hr):
 
 def linefit(grid, obsid, beam_lim):
     slicepoints = np.linspace(60, 76, 8)
+    fig, ax = plt.subplots(1, 1, figsize=(15, 12))
     for i in slicepoints:
         y = grid[int(i), :]
-        print(y.shape)
         ras = np.linspace(beam_lim[0], beam_lim[1], len(y))
         x = np.linspace(beam_lim[2], beam_lim[3], len(y))
-        plt.plot(x, y, label=str(round(ras[int(i)], 1)))
+        ax.plot(x, y, label=str(round(ras[int(i)], 1)))
         # regplot = sns.regplot(x=x, y=y)
         # yy = sns.residplot(x, y, lowess=True, scatter_kws={"color": "black"}, line_kws={"color": "red"})
         # yy.set(xlabel='Dec (deg)', ylabel='Residuals', title='Fitted rotation measure curve and residuals (constant Ra)')
-    plt.legend(loc="upper center", title='RA [deg]')
-    plt.title('Faraday depth residuals along constant RA')
-    plt.xlabel('DEC [deg]')
-    plt.ylabel("r'$\phi$' Residuals")
+    ax.legend(loc="upper center", title='RA [deg]')
+    ax.set_title('Faraday depth residuals along constant RA')
+    ax.set_xlabel('DEC [deg]')
+    ax.set_ylabel("r'$\phi$' Residuals")
     plt.savefig('%s_14hrs_residuals_constdeg.png' % (obsid))
     #fig = regplot.get_figure()
     #fig.savefig('1065880128_14hrs_1ra_ionfr.png')
 
 
-def spatial_fr_plot(ra, dec, fr, fr_err, obsid):
-    print('trying plotly')
+def spatial_fr_plot(ra, dec, fr, fr_err, obsid, title='xx'):
+    print('Using plotly')
     size = fr_err
     fig = go.Figure(data=[go.Scatter(
         x=ra,
@@ -311,47 +313,106 @@ def spatial_fr_plot(ra, dec, fr, fr_err, obsid):
             size=fr_err,
             # sizemode = 'diameter',
             showscale=True,
-            sizeref=2. * max(size) / (6**2)
+            sizeref=2. * max(size) / (5**2)
             )
     )])
     fig.update_layout(
-                    title='colour=mean, size=std',
+                    autosize=False,
+                    width=1000,
+                    height=800,
+                    title='colour=Faraday rotation, size=error',
                     xaxis=dict(title='Ra [deg]'),
                     yaxis=dict(title='Dec [deg]'))
                     # xaxis=dict(range=[beam_lim[0], beam_lim[1]], title='Ra [deg]'),
                     # yaxis=dict(range=[beam_lim[2], beam_lim[3]], title='Dec [deg]'))
 
-    # fig.update_xaxes(autorange="reversed")
-    # fig.show()
-    # fig.write_image('%s_fr_14hrs.png' % (obsid))
+    fig.update_xaxes(autorange="reversed")
+    #fig.show()
+    fig.write_image(title)
 
 
-def resid_overlay(grid_sub, df, beam_extent):
-    fig, ax = plt.subplots(1, 1)
+def fr_resids_plot(grid_sub, ra, dec, beam_extent, obsid):
+    fig, ax = plt.subplots(1, 1, figsize=(15, 12))
     img1 = ax.imshow(grid_sub, extent=beam_extent, cmap="plasma")
-    ax.scatter(df.ra, df.dec, s=df.stds*20, alpha=0.5, color='r')
     ax.set_xlabel("RA [deg]")
     ax.set_ylabel("Dec [deg]")
+    ax.set_title("Faraday depth residuals after plane surface fit")
     fig.colorbar(img1, ax=ax, format="%.2f", fraction=0.046, pad=0.04)
-    # spatial_fr_plot(df.ra, df.dec, df.ampscales, df.stds, obsid)
-    plt.show()
+    plt.savefig('%s_14hrs_fr_resids.png' % (obsid))
+    # plt.show()
+
+
+def resid_overlay(ra, dec, ampscales, stds, grid_sub, beam_lim, obsid, var='median amplitude scales'):
+    print('Using plotly')
+    size = stds
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Scatter(
+            x=ra,
+            y=dec,
+            mode='markers',
+            text=ampscales,
+            hoverinfo='text',
+            showlegend=False,
+            marker=dict(
+                color=ampscales,
+                colorscale='Magma_r',
+                showscale=False,
+                size=stds,
+                # sizemode = 'diameter',
+                #showscale=True,
+                sizeref=2. * max(size) / (6**2)
+                )
+        ))
+
+    fig.add_trace(
+       go.Heatmap(
+            z=grid_sub,
+            x=np.linspace(beam_lim[0], beam_lim[1], 142),
+            y=np.linspace(beam_lim[3], beam_lim[2], 142),
+            #colorscale='Electric'
+                ))
+
+    fig.update_layout(
+                    autosize=False,
+                    width=1000,
+                    height=800,
+                    title='%s: Faraday depth residuals overlayed with %s (dots color/size)' % (obsid, var),
+                    # xaxis=dict(title='Ra [deg]'),
+                    # yaxis=dict(title='Dec [deg]'))
+                    xaxis=dict(range=[beam_lim[0], beam_lim[1]], title='Ra [deg]'),
+                    yaxis=dict(range=[beam_lim[2], beam_lim[3]], title='Dec [deg]'))
+
+    # fig.update_xaxes(autorange="reversed")
+    if var == 'median amplitude scales':
+        fig.write_image('%s_fr_700_resids_median_14hrs.png' % (obsid))
+    else:
+        fig.write_image('%s_fr_700_resids_std_14hrs.png' % (obsid))
+        fig.show()
 
 
 if __name__ == '__main__':
-    # files = sorted(os.listdir(path))
-    # for i in range(len(files)):
-    # obsid = files[i].split('.')[0]
-    obsid = 1065877200
-    hr = 14
-    # get_obsid_ionfr_txts(obsid)
-    df = make_df(hr, obsid) # csvfyl='1065877200_14hrs_ionfr.csv')
-    print(df.head())
-    # spatial_fr_plot(df.ra, df.dec, df.fr, df.fr_err, obsid)
-    radius, fra, fdec, fflux, fampscales, fstds,  f_fr, f_fr_err, ra_centre, dec_centre = get_center(df)
-    grid, beam_extent = interpfr(
-        radius, fra, fdec, f_fr, f_fr_err, ra_centre, dec_centre, obsid, hr)
-    # plot_interp_fr(grid, beam_extent)
-    X1, X2, grid, plane, grid_sub = plane_fit(grid, obsid, hr)
-    print('done yes')
-    # linefit(grid_sub, obsid, beam_extent)
-    resid_overlay(grid_sub, df, beam_extent)
+    files = sorted(os.listdir(os.path.abspath('.')))
+    
+    for i in range(len(files)):
+        if files[i].split('.')[-1] == 'csv' and files[i] != 'blacklist_sources.csv':
+            obsid = files[i].split('_')[0]
+            print(obsid)
+            # obsid = 1066568224
+            hr = 14
+            # get_obsid_ionfr_txts(obsid)
+            df = make_df(hr, obsid, csvfyl='%s_14hrs_ionfr.csv' % (obsid))
+            print(df.tail())
+            #spatial_fr_plot(df.ra, df.dec, df.fr, df.fr_err, obsid, title='%s_fr_scatter_14hrs.png' % (obsid))
+            #spatial_fr_plot(df.ra, df.dec, df.ampscales, df.stds, obsid, title='%s_median_stds_scatter_14hrs.png' % (obsid))
+            radius, fra, fdec, fflux, fampscales, fstds,  f_fr, f_fr_err, ra_centre, dec_centre = get_center(df)
+            grid, beam_extent = interpfr(
+                radius, fra, fdec, f_fr, f_fr_err, ra_centre, dec_centre, obsid, hr)
+            #plot_interp_fr(grid, beam_extent)
+            X1, X2, grid, plane, grid_sub = plane_fit(grid, obsid, hr)
+            print('done yes')
+            #linefit(grid_sub, obsid, beam_extent)
+            #fr_resids_plot(grid_sub, fra, fdec, beam_extent, obsid)
+            resid_overlay(fra, fdec, fampscales, fampscales, grid_sub, beam_extent, obsid)
+            resid_overlay(fra, fdec, fstds, fstds, grid_sub, beam_extent, obsid, var='std of amplitude scales')
