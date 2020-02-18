@@ -16,6 +16,7 @@ import plotly.graph_objects as go
 
 
 path = '/home/chege/Desktop/curtin_work/vega/'
+print('done importing')
 
 
 def loadfile(data_file):
@@ -87,6 +88,31 @@ def get_fr_value(ionfr_txt_file, hour):
     return fr_value, fr_value_err
 
 
+def get_radec(sources, obsid):
+    '''
+    Gets the Ra and Dec of a source from the yaml file who's path is given.
+    '''
+    yaml_file = '/home/chege/Desktop/curtin_work/vega/%s.yaml' % (obsid)
+    ras = []
+    decs = []
+    fluxes = []
+    ampscales = []
+    stds = []
+    with open(yaml_file, 'r') as f:
+        unpacked = yaml.load(f, Loader=SafeLoader)
+        for sos in sources:
+            for soc in unpacked['sources']:
+                if unpacked['sources'][soc]['name'] == sos:
+                    print('.........found source')
+                    print('................getting its ra & dec')
+                    ras.append(float(unpacked['sources'][soc]['ra']))
+                    decs.append(float(unpacked['sources'][soc]['dec']))
+                    ampscales.append(float(np.nanmedian(unpacked['sources'][soc]['amp_scales'][1:13])))
+                    stds.append(float(np.nanstd(unpacked['sources'][soc]['amp_scales'][1:13])))
+                    fluxes.append(float(unpacked['sources'][soc]['flux_density']))
+    return ras, decs, fluxes, ampscales, stds
+
+
 def make_df(hour, obsid, csvfyl=None):
     if csvfyl is not None:  # if we have a csv file with ra dec, fr, and fr_err
         df = pd.read_csv(csvfyl)
@@ -94,33 +120,21 @@ def make_df(hour, obsid, csvfyl=None):
     else:
         txtdir = '/home/chege/Desktop/curtin_work/run_ionfr/singleLOScomparisons/1066568224_frtxts'
         fyls = sorted([fyl for fyl in os.listdir(txtdir) if fyl.split('.')[-1] == 'txt'])
-        print(len(fyls))
-        ras = []
-        decs = []
-        ampscales = []
-        fluxs = []
-        stds = []
+        sources = [fyl.split('_')[0] for fyl in fyls]
+        print(len(sources))
+        ras, decs, fluxes, ampscales, stds = get_radec(sources, obsid)
         frs = []
         frs_errs = []
         i = 1
         for fyl in fyls:
             print(i)
             i += 1
-            # if fyl.split('.')[-1] == 'txt':
-            print(fyl)
-            source = fyl.split('_')[0]
-            ra, dec, flux, ampscale, std = run_ionfr.get_radec(source, obsid)
-            ras.append(float(ra))
-            decs.append(float(dec))
-            fluxs.append(float(flux))
-            ampscales.append(float(ampscale))
-            stds.append(float(std))
             fylpath = txtdir + '/' + fyl
             fr_value, fr_value_err = get_fr_value(fylpath, hour)
             frs.append(float(fr_value))
             frs_errs.append(float(fr_value_err))
         df = pd.DataFrame(
-            list(zip(ras, decs, fluxs, ampscales, stds,  frs, frs_errs)),
+            list(zip(ras, decs, fluxes, ampscales, stds,  frs, frs_errs)),
             columns=['ra', 'dec', 'flux', 'ampscales', 'stds', 'fr', 'fr_err'])
         print('made dataframe with radec and fr values')
     df = df.dropna(axis=0)
@@ -128,9 +142,11 @@ def make_df(hour, obsid, csvfyl=None):
     # print(blacklist)
     # blacklist.to_csv('blacklist_sources.csv', mode='a', header=False)
     df = df[((df.stds - df.stds.median()) / df.stds.std()).abs() < 3]
-    df = df.nlargest(700, 'flux', keep='all')
+    print(df.head())
+    df = df.nlargest(700, 'flux', keep="'all'")
     # df.to_csv('%s_%shrs_ionfr.csv' % (obsid, hour))
     return df
+    
 
 
 def get_center(df):
@@ -394,8 +410,9 @@ def resid_overlay(ra, dec, ampscales, stds, grid_sub, beam_lim, obsid, var='medi
 
 if __name__ == '__main__':
     files = sorted(os.listdir(os.path.abspath('.')))
-    
+
     for i in range(len(files)):
+        print(files[i])
         if files[i].split('.')[-1] == 'csv' and files[i] != 'blacklist_sources.csv':
             obsid = files[i].split('_')[0]
             print(obsid)
